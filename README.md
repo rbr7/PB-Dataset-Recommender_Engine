@@ -19,10 +19,6 @@ The Jupyter, Rmd, and Markdown files are required to have a specific set of yaml
 
 ```
 ---
-title: I Found that Lemurs Do Funny Dances
-authors:
-- sally_smarts
-- wesley_wisdom
 tags:
 - knowledge
 - example
