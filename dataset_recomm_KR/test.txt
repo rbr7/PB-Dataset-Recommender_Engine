@@ -1,0 +1,1114 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "title: Testing recommendation engine on a UC signature(PZ349) from creeds and recommending top 3 datasets.\n",
+   
+    "tldr: Ran the recommendation engine on UC signature from creeds. Manually curated dataset and metadata were used which were prepared earlier. Recommended top 3 datasets.\n",
+    "---"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import requests\n",
+    "from bs4 import BeautifulSoup\n",
+    "import pandas as pd\n",
+    "from itertools import chain\n",
+    "GEO_URL = \"http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=\""
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Function to get CREEDS response for a signature id "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "CREEDS_URL = 'http://amp.pharm.mssm.edu/CREEDS/'\n",
+    "def get_creeds_response(sig_id):\n",
+    "    parameter = {\"id\" : sig_id}\n",
+    "    response = requests.get(CREEDS_URL + 'api', params=parameter)\n",
+    "    if response.status_code == 200:\n",
+    "        output = response.json()\n",
+    "    else:\n",
+    "        output = 'CREEDS server could not return output'\n",
+    "    return output"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Function to run creeds for up and down genes"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def run_creeds(up_genes, down_genes):\n",
+    "    payload = {\n",
+    "        'up_genes': up_genes,\n",
+    "        'dn_genes': down_genes,\n",
+    "        'direction': 'similar',\n",
+    "        'db_version': 'v1.0'\n",
+    "    }\n",
+    "\n",
+    "    r = requests.post(CREEDS_URL + 'search', json=payload)\n",
+    "    print(r.status_code)\n",
+    "    response = r.json()\n",
+    "\n",
+    "    creeds_response_df = pd.DataFrame.from_records(response).set_index('id')\n",
+    "    return creeds_response_df"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Function to get up, down and query organism from creeds response returned"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def get_creeds_sig_info(creeds_response_dict):\n",
+    "    desired_data = ['do_id', 'geo_id', 'cell_type', 'platform', 'disease_name', 'organism']\n",
+    "    interested_dict = dict([(i, creeds_response_dict.get(i)) for i in desired_data])\n",
+    "    down_genes = [i[0] for i in creeds_response_dict['down_genes']]\n",
+    "    up_genes = [j[0] for j in creeds_response_dict['up_genes']]\n",
+    "    organism_dict = {'human': 'hs', 'mouse': 'mm', 'rat': \"rt\"}\n",
+    "    query_org = organism_dict[interested_dict['organism']]\n",
+    "    return up_genes, down_genes, query_org"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Get creeds response for UC signature ID P439 "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "creeds_data = get_creeds_response(\"dz:P439\")\n",
+    "creeds_data\n",
+    "up_genes, down_genes, query_org = get_creeds_sig_info(creeds_data)\n",
+    "creeds_response_df = run_creeds(up_genes, down_genes)\n",
+    "creeds_response_df.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### take top signature from the responses returned by CREEEDS"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bestsig_id = creeds_response_df.index.values[0]\n",
+    "bestsig_id"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bestsig_id2 = creeds_response_df.index.values[1]\n",
+    "bestsig_id2"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Function to get summary and title from GSE ID"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "code_folding": [],
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "def get_summary_and_title(gse_id):\n",
+    "    url = GEO_URL + gse_id\n",
+    "   \n",
+    "    page = requests.get(url)\n",
+    "    soup = BeautifulSoup(page.text, \"html.parser\")\n",
+    "    title = soup.find(\"td\", text=\"Title\").find_next_sibling(\"td\").text\n",
+    "    # pltfm_org = soup.find(\"td \", text=\"Platform organism\").find_next_sibling(\"td\").text\n",
+    "    # sample_org = soup.find(\"td\", text=\"Sample organism\").find_next_sibling(\"td\").text\n",
+    "    exp_type = soup.find(\"td\", text=\"Experiment type\").find_next_sibling(\"td\").text\n",
+    "    abstract = soup.find(\"td\", text=\"Summary\").find_next_sibling(\"td\").text\n",
+    "\n",
+    "    dataset_meta = {'gse_id': gse_id, 'title': title, 'exp_type': exp_type, 'abstract': abstract}\n",
+    "    return(dataset_meta)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "code_folding": [
+     0
+    ]
+   },
+   "outputs": [],
+   "source": [
+    "def query_jensen_api(input_string):\n",
+    "   query_string = input_string.replace(\" \", \"+\")\n",
+    "   url = 'http://tagger.jensenlab.org/GetEntities?document=' + \\\n",
+    "       query_string + '&entity_types=-2+-25+-26+-27+-21+-22+-23+0+-1+-3+ \\\n",
+    "       -11+-24+-28+-29+-30+-31+-36&format=tsv'\n",
+    "   response = requests.get(url)\n",
+    "   response_jensen = pd.DataFrame([x.split('\\t') for x in str(\n",
+    "       response.text).split(\"\\n\")], columns=[\"Name\", \"Annotation\",\"Identifier\"])\n",
+    "   response_jensen_wo_duplicates = response_jensen.drop_duplicates([\"Name\"])\n",
+    "   return response_jensen_wo_duplicates"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "code_folding": [
+     0
+    ]
+   },
+   "outputs": [],
+   "source": [
+    "def get_metadata(sig_id):\n",
+    "   creeds_response_dict = get_creeds_response(sig_id)\n",
+    "   gse_id = creeds_response_dict['geo_id']\n",
+    "   data = get_summary_and_title(gse_id)\n",
+    "   jensen_output = query_jensen_api(data['abstract'])\n",
+    "   annotated_data = (annotate_biomedical_entities(jensen_output))\n",
+    "   return annotated_data\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "code_folding": [
+     0
+    ]
+   },
+   "outputs": [],
+   "source": [
+    "biomedicalTermsJensenAnnotated = {'APO_phenotypes': -28,\n",
+    "                                  'BTO_Tissues': -25,\n",
+    "                                  'DOID_Diseases': -26,\n",
+    "                                  'ENVO_environments': -27,\n",
+    "                                  'FYPO_phenotypes': -29,\n",
+    "                                  'GOBiologicalProcess': -21,\n",
+    "                                  'GOCellularComponent': -22,\n",
+    "                                  'GOMolecularFunction': -23,\n",
+    "                                  'GOOther': -24,\n",
+    "                                  'MPheno_phenotypes': -30,\n",
+    "                                  'NBO_behaviors': -31,\n",
+    "                                  'NCBI_Chemicals': -1,\n",
+    "                                  'NCBI_Species': -2,\n",
+    "                                  'NCBI_Species_Proteins': -3,\n",
+    "                                  'Wikipedia': -11,\n",
+    "                                  'mammalian_phenotypes': -36}"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "code_folding": [
+     0
+    ]
+   },
+   "outputs": [],
+   "source": [
+    "def annotate_biomedical_entities(response_jensen_wo_duplicates):\n",
+    "    \"\"\"\n",
+    "    This function annotate words along with biomedical entities\n",
+    "\n",
+    "    Parameters\n",
+    "    ----------\n",
+    "    response_jensen_wo_duplicates : pandas dataframe\n",
+    "         pandas dataframe having word along with annotation and identifier\n",
+    "\n",
+    "    Returns\n",
+    "    -------\n",
+    "    dict\n",
+    "        dictionary where each entity contains list of\n",
+    "        words from input string as values\n",
+    "    \"\"\"\n",
+    "\n",
+    "    annotated_dict = dict()\n",
+    "    for index, row in response_jensen_wo_duplicates.iterrows():\n",
+    "        k = [key for (key, value) in biomedicalTermsJensenAnnotated.\n",
+    "             items() if int(row[1]) == value]\n",
+    "        if int(row[1]) > 1:\n",
+    "            k = [\"Genes\"]\n",
+    "        m = \"Not_Known\" if len(k) == 0 else k[0]\n",
+    "        annotated_dict.setdefault(m, [])\n",
+    "        annotated_dict[m].append(row[0])\n",
+    "    return annotated_dict\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### get metadata for top response returned by CREEDS"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "creeds_response_df.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "top5_sigs = {}"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "best_sig_metadata = get_metadata(bestsig_id2)\n",
+    "best_sig_metadata"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for sig_id in creeds_response_df.index.values[0:8]:\n",
+    "    print(sig_id)\n",
+    "    if('gene' not in sig_id):\n",
+    "        top5_sigs[sig_id] = get_metadata(sig_id)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "for sig_id in creeds_response_df.index.values[0:8]:\n",
+    "    print(sig_id)\n",
+    "    if('gene' not in sig_id):\n",
+    "        metadata_dict = get_metadata(sig_id)\n",
+    "        disease_list = metadata_dict['DOID_Diseases']\n",
+    "        if('Disease' in disease_list):\n",
+    "            disease_list.remove('Disease')\n",
+    "        elif('disease' in disease_list):\n",
+    "            disease_list.remove('disease')\n",
+    "        tissue_list = metadata_dict.get('BTO_Tissues','')\n",
+    "        disease_list = [x.lower() for x in disease_list]\n",
+    "        tissue_list = [x.lower() for x in tissue_list]\n",
+    "        top5_sigs[sig_id] = (disease_list, tissue_list)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "top5_sigs"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "metadata_disease_columns = set(chain.from_iterable([top5_sigs[sig_id][0] for sig_id in top5_sigs.keys()]))\n",
+    "metadata_tissue_columns = set(chain.from_iterable([top5_sigs[sig_id][1] for sig_id in top5_sigs.keys()]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "metadata_disease_columns"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "metadata_tissue_columns"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "metadata_disease_columns_JENSEN = ['JENSEN_' + x for x in set.union(metadata_disease_columns, metadata_tissue_columns)]\n",
+    "metadata_disease_columns_JENSEN"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Get metadata from CREEDS"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "creeds_metadata_dict_best = {}"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for sig_id in creeds_response_df.index.values[0:8]:\n",
+    "    if('gene' not in sig_id):\n",
+    "        creeds_response = get_creeds_response(bestsig_id)['cell_type']\n",
+    "        cell_type_list = [creeds_response]\n",
+    "        if isinstance(creeds_response, list):\n",
+    "            cell_type_list = [x['name'] for x in creeds_response]\n",
+    "        cell_type_list = [x.lower() for x in cell_type_list]\n",
+    "        creeds_metadata_dict_best[sig_id] = cell_type_list"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "creeds_metadata_dict_best"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "creeds_metadata_celltype_columns = set(chain.from_iterable([creeds_metadata_dict_best[sig_id] for sig_id in creeds_metadata_dict_best.keys()]))\n",
+    "creeds_metadata_celltype_columns_CREEDS = list(['CREEDS_' + x for x in creeds_metadata_celltype_columns])\n",
+    "creeds_metadata_celltype_columns_CREEDS"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### READ metadata file made earlier to get similarity scores"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import requests"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "meta_data = pd.read_csv('UC_signatures_metadata.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#### Check how many columns are common\n",
+    "np.intersect1d(list(meta_data.columns), list())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "np.intersect1d(list(meta_data.columns), metadata_disease_columns_JENSEN)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "vec_user_sig = pd.Series(0, index=meta_data.columns[1:])\n",
+    "vec_user_sig[np.intersect1d(list(meta_data.columns), metadata_disease_columns_JENSEN)] = 1\n",
+    "vec_user_sig"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "meta_data.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "meta_data_df = meta_data.set_index('Unnamed: 0')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "meta_data_df = meta_data_df.reset_index()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "user_ratings = pd.read_csv('manual_rating_creeds.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "user_ratings.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "user_ratings = user_ratings.set_index('Unnamed: 0')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "user_ratings.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sig_dataset = user_ratings.index"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "s= sig_dataset.tolist()\n",
+    "s"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "metadata_df_new = meta_data_df[meta_data_df['Unnamed: 0'].isin(s)]\n",
+    "metadata_df_new"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "metadata_df_new = metadata_df_new.set_index('Unnamed: 0')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "metadata_df_new"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "meta_data_df = metadata_df_new"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Cosine Similarity"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from scipy import spatial"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "meta_data_df.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Calculating similarity of all signatures with user signature"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "list_of_signs = list(meta_data_df.index)\n",
+    "\n",
+    "sim_score = []\n",
+    "\n",
+    "user_sign = np.array(vec_user_sig)\n",
+    "for i in range(len(list_of_signs)):\n",
+    "    print(i)     \n",
+    "    similarity = 1 - spatial.distance.cosine(meta_data_df.iloc[i,:],np.array(vec_user_sig))\n",
+    "    sim_score.append(similarity)\n",
+    "    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sim_score"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Creating a dict for signature and their similarity scores"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sim_sign_dict = {}\n",
+    "\n",
+    "for i in range(len(sim_score)):\n",
+    "    sim_sign_dict[list_of_signs[i]] = sim_score[i]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sim_sign_dict"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Sorted Similarity"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def sorted_sim_score_dict(sim_scores):\n",
+    "    \n",
+    "    sorted_score = sorted(sim_sign_dict.items(), key=lambda value: value[1], reverse=True)\n",
+    "    return sorted_score\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sort_sim_score = sorted_sim_score_dict(sim_score)\n",
+    "sort_sim_score"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Top-K neighbors of similar signature"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def top_k_neighbors(sorted_score, k):\n",
+    "    \n",
+    "    top_k = sorted_score[0:k]\n",
+    "    \n",
+    "    return top_k"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "top_k = top_k_neighbors(sort_sim_score, 3)\n",
+    "top_k"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Filtering from Top-k"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def filter_top_k(top_k):\n",
+    "    \n",
+    "    filtered_top_k =[]\n",
+    "    \n",
+    "    for i in range(len(top_k)):\n",
+    "        \n",
+    "        if top_k[i][1] > 0.1:\n",
+    "            \n",
+    "            filtered_top_k.append(top_k[i])\n",
+    "            \n",
+    "    return filtered_top_k"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "filtered_top_k = filter_top_k(top_k)\n",
+    "filtered_top_k"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Extracting the signature and the similarity scores"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sim_sig = [x[0] for x in filtered_top_k]\n",
+    "sim_scr = [x[1] for x in filtered_top_k]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sim_sig"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sim_scr"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Dataset scores"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "dataset_names = user_ratings.columns"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "dataset_names"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "len(dataset_names)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "len(dataset_names.unique())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "total_score_list = []\n",
+    "\n",
+    "for i in range(0, len(user_ratings.columns)):\n",
+    "    score = []\n",
+    "    \n",
+    "    for j in range(len(sim_sig)):\n",
+    "        rating = user_ratings.loc[sim_sig[j]][dataset_names[i]] \n",
+    "        score.append(rating*sim_scr[j])\n",
+    "        \n",
+    "    total_score = np.nansum(score)/sum(sim_scr)\n",
+    "    total_score_list.append(total_score)\n",
+    "    print('{0}:{1}'.format(dataset_names[i], total_score))\n",
+    "    "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Creating a dict for dataset and there scores"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "dataset_score_dict = {}\n",
+    "for i in range(len(user_ratings.columns)):\n",
+    "    #print(str(i+1))\n",
+    "    dataset_score_dict[dataset_names[i]] = total_score_list[i]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "dataset_score_dict"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "total_score_list"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Sorting the dataset with their scores"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def sorted_dataset_score_dict(dataset_scores):\n",
+    "    \n",
+    "    sorted_dataset_score = sorted(dataset_scores.items(), key=lambda value: value[1], reverse=True)\n",
+    "    return sorted_dataset_score"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sorted_score = sorted_dataset_score_dict(dataset_score_dict)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sorted_score"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Selecting the top n datasets"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def top_n_dataset(sorted_score, k):\n",
+    "    top_k = sorted_score[0:k]\n",
+    "    \n",
+    "    return top_k"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Top n datasets recommended "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "top_n_dataset = top_n_dataset(sorted_score, 3)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "top_n_dataset"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "get_summary_and_title('GSE9452')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "get_summary_and_title('GSE11223')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "get_summary_and_title('GSE6731')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "hide_input": false,
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.6.5"
+  },
+  "toc": {
+   "base_numbering": 1,
+   "nav_menu": {},
+   "number_sections": true,
+   "sideBar": true,
+   "skip_h1_title": false,
+   "title_cell": "Table of Contents",
+   "title_sidebar": "Contents",
+   "toc_cell": false,
+   "toc_position": {},
+   "toc_section_display": true,
+   "toc_window_display": true
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
