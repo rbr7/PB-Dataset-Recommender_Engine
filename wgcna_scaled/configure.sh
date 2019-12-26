@@ -9,7 +9,7 @@ echo $R_exists
 if [[ -z "$R_exists" ]]
 then
 	echo "Installing R......"
-	sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys E298A3A825C0D65DFD57CBB651716619E084DAB9
+	sudo apt-key adv --keyserver keyserver.##########.com --recv-keys ####################################
 	sudo add-apt-repository 'deb https://cloud.r-project.org/bin/linux/ubuntu bionic-cran35/'
 	yes | sudo apt update
 	yes | sudo apt install r-base
@@ -69,8 +69,3 @@ sudo su - -c "R -e \"install.packages('WGCNA', repos='http://cran.rstudio.com/')
 
 echo "WGCNA installed"
 
-# install AWS CLI
-yes | sudo apt install python-pip
-sudo -H pip install --upgrade awscli
-
-echo "AWS CLI installed"
